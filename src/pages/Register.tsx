@@ -4,8 +4,8 @@ import { explorerTxUrl } from '../cardano/governance'
 import type { HotWallet } from '../cardano/hotWallet'
 import { detectKeypact, enableKeypact } from '../cardano/keypact'
 import {
+  checkHotAuthorization,
   fetchCommitteeMembers,
-  isHotAuthorized,
   registerHotKey,
 } from '../cardano/register'
 import { HotWalletPicker } from '../components/HotWalletPicker'
@@ -73,9 +73,15 @@ export function RegisterPage() {
     for (let i = 0; i < 20; i++) {
       try {
         const members = await fetchCommitteeMembers()
-        if (isHotAuthorized(members, hotId, coldId)) {
+        const check = checkHotAuthorization(members, hotId, coldId)
+        if (check.authorized) {
           setAuthorized(true)
-          setStatus('Hot credential is authorized on-chain.')
+          setStatus(check.detail)
+          return
+        }
+        // Cold not on roster will never flip via indexer lag — stop early.
+        if (check.detail.includes('not on the current constitutional committee')) {
+          setStatus(check.detail)
           return
         }
       } catch {
@@ -83,7 +89,12 @@ export function RegisterPage() {
       }
       await new Promise((resolve) => window.setTimeout(resolve, 15000))
     }
-    setStatus('Submitted. Blockfrost has not yet shown the new hot credential — check again in a minute.')
+    try {
+      const members = await fetchCommitteeMembers()
+      setStatus(checkHotAuthorization(members, hotId, coldId).detail)
+    } catch {
+      setStatus('Submitted. Blockfrost has not yet shown the new hot credential — check again in a minute.')
+    }
   }
 
   return (

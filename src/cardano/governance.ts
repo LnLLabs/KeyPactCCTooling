@@ -7,7 +7,7 @@ import {
   VotingProcedures,
 } from '@evolution-sdk/evolution'
 import { blake2b } from '@noble/hashes/blake2.js'
-import { blockfrostFetch, rationaleUrl } from './config'
+import { blockfrostFetch, rationaleUrl, assertPublicRationaleUrl } from './config'
 import { createSigningClient, type HotWallet } from './hotWallet'
 
 const MAX_TX_BYTES = 16_000
@@ -122,12 +122,18 @@ export function pendingProposals(proposals: Proposal[], votes: CommitteeVote[]):
 }
 
 export async function loadLgtmAnchor(): Promise<Anchor.Anchor> {
-  const url = rationaleUrl()
+  const url = assertPublicRationaleUrl(rationaleUrl())
   const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`Could not load rationale from ${url} (${response.status})`)
+    throw new Error(
+      `Could not load rationale from ${url} (${response.status}). ` +
+        `Ensure VITE_RATIONALE_URL points at a publicly reachable lgtm.jsonld.`,
+    )
   }
   const bytes = new Uint8Array(await response.arrayBuffer())
+  if (bytes.length === 0) {
+    throw new Error(`Rationale at ${url} is empty`)
+  }
   const hash = blake2b(bytes, { dkLen: 32 })
   return new Anchor.Anchor({
     anchorUrl: new Url.Url({ href: url }),

@@ -1,10 +1,10 @@
 import {
   Address,
   Client,
-  CommitteeHotCredential,
   KeyHash,
   mainnet,
 } from '@evolution-sdk/evolution'
+import { ccHotBech32 } from './cip129'
 import { blockfrostConfig } from './config'
 import type { InjectedWallet } from './keypact'
 
@@ -126,7 +126,7 @@ export async function connectCip30Wallet(detected: DetectedCip30): Promise<HotWa
     name: detected.name,
     key: detected.key,
     keyHash: payment,
-    ccHotId: CommitteeHotCredential.toBech32(payment),
+    ccHotId: ccHotBech32(payment),
     addressBech32: Address.toBech32(address),
     api,
   }

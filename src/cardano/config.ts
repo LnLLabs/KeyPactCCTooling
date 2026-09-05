@@ -49,6 +49,36 @@ export function rationaleUrl(): string {
   return `${window.location.origin}${RATIONALE_PATH}`
 }
 
+/** Anchors are fetched by chain indexers; localhost / private hosts are not usable on mainnet. */
+export function assertPublicRationaleUrl(url = rationaleUrl()): string {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error(`Invalid rationale URL: ${url}`)
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`Rationale URL must be http(s): ${url}`)
+  }
+  const host = parsed.hostname.toLowerCase()
+  const local =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host.endsWith('.local') ||
+    host.startsWith('192.168.') ||
+    host.startsWith('10.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+  if (local) {
+    throw new Error(
+      `Rationale URL cannot be a local address (${url}). ` +
+        `Set VITE_RATIONALE_URL to a public HTTPS URL of /rationale/lgtm.jsonld (anchors are resolved off-device).`,
+    )
+  }
+  return url
+}
+
 export function formatError(error: unknown): string {
   const parts: string[] = []
   const seen = new Set<unknown>()

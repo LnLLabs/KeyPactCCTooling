@@ -9,18 +9,22 @@ import {
   type Proposal,
 } from '../cardano/governance'
 import type { HotWallet } from '../cardano/hotWallet'
+import { fetchCommitteeMembers, checkHotAuthorization } from '../cardano/register'
 import { HotWalletPicker } from '../components/HotWalletPicker'
 import { useApp } from '../context/AppContext'
 
 export function VotePage() {
-  const { hotWallet, setHotWallet } = useApp()
+  const { hotWallet, setHotWallet, lastColdId } = useApp()
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [warning, setWarning] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [txHashes, setTxHashes] = useState<string[]>([])
+  const [authorized, setAuthorized] = useState<boolean | null>(null)
+  const [switching, setSwitching] = useState(false)
 
   const selectedList = useMemo(
     () => proposals.filter((proposal) => selected.has(proposal.proposalId)),
@@ -31,7 +35,15 @@ export function VotePage() {
     if (!hotWallet) return
     setLoading(true)
     setError(null)
+    setWarning(null)
     try {
+      const members = await fetchCommitteeMembers()
+      const check = checkHotAuthorization(members, hotWallet.ccHotId, lastColdId ?? undefined)
+      setAuthorized(check.authorized)
+      if (!check.authorized) {
+        setWarning(check.detail)
+      }
+
       const [open, votes] = await Promise.all([
         fetchProposalList(),
         fetchCommitteeVotes(hotWallet.ccHotId),
@@ -45,7 +57,7 @@ export function VotePage() {
     } finally {
       setLoading(false)
     }
-  }, [hotWallet])
+  }, [hotWallet, lastColdId])
 
   useEffect(() => {
     if (hotWallet) void refresh()
@@ -53,8 +65,24 @@ export function VotePage() {
 
   function onHotConnected(wallet: HotWallet) {
     setHotWallet(wallet)
+    setSwitching(false)
+    setAuthorized(null)
     setError(null)
+    setWarning(null)
+    setTxHashes([])
     setStatus(`Connected ${wallet.name}`)
+  }
+
+  function disconnect() {
+    setHotWallet(null)
+    setSwitching(false)
+    setProposals([])
+    setSelected(new Set())
+    setAuthorized(null)
+    setTxHashes([])
+    setStatus(null)
+    setError(null)
+    setWarning(null)
   }
 
   function toggle(id: string) {
@@ -76,6 +104,13 @@ export function VotePage() {
 
   async function onVote() {
     if (!hotWallet) return
+    if (authorized === false) {
+      setError(
+        'Cannot cast committee votes: this hot key is not the active authorized hot for a current committee cold. ' +
+          (warning ?? ''),
+      )
+      return
+    }
     setBusy(true)
     setError(null)
     setTxHashes([])
@@ -92,16 +127,31 @@ export function VotePage() {
     }
   }
 
-  if (!hotWallet?.api) {
+  if (!hotWallet?.api || switching) {
     return (
       <section className="panel">
         <h1>Vote</h1>
         <p className="lead">Connect the CIP-30 wallet whose payment key is the authorized hot credential.</p>
+        {switching && hotWallet && (
+          <p className="status">
+            Currently connected: <code>{hotWallet.name}</code> · <code>{hotWallet.ccHotId}</code>
+          </p>
+        )}
         <HotWalletPicker
-          hotWallet={null}
+          hotWallet={switching ? hotWallet : null}
           onConnected={onHotConnected}
           onError={(err) => setError(formatError(err))}
         />
+        {switching && (
+          <div className="row">
+            <button type="button" onClick={() => setSwitching(false)}>
+              Cancel
+            </button>
+            <button type="button" onClick={disconnect}>
+              Disconnect
+            </button>
+          </div>
+        )}
         {error && <p className="error">{error}</p>}
       </section>
     )
@@ -111,27 +161,50 @@ export function VotePage() {
     <section className="panel">
       <h1>Pending votes</h1>
       <p className="lead">
-        Voting as <code>{hotWallet.ccHotId}</code> through <code>{hotWallet.name}</code>. Selected
-        actions are cast Yes with rationale <code>lgtm</code> in a single transaction when they fit.
-        Approve the CIP-30 prompt to sign.
+        Voting as <code>{hotWallet.ccHotId}</code> through <code>{hotWallet.name}</code>
+        {lastColdId ? (
+          <>
+            {' '}
+            (cold <code>{lastColdId}</code>)
+          </>
+        ) : null}
+        . Selected actions are cast Yes with rationale <code>lgtm</code> in a single transaction when
+        they fit. Approve the CIP-30 prompt to sign.
       </p>
 
       <div className="row">
         <button type="button" onClick={() => void refresh()} disabled={loading || busy}>
           {loading ? 'Loading…' : 'Refresh'}
         </button>
-        <button type="button" onClick={selectAll} disabled={proposals.length === 0}>
+        <button type="button" onClick={() => setSwitching(true)} disabled={busy}>
+          Switch wallet
+        </button>
+        <button type="button" onClick={disconnect} disabled={busy}>
+          Disconnect
+        </button>
+        <button type="button" onClick={selectAll} disabled={proposals.length === 0 || authorized === false}>
           Select all
         </button>
         <button type="button" onClick={selectNone} disabled={selected.size === 0}>
           Clear
         </button>
-        <button type="button" onClick={() => void onVote()} disabled={busy || selectedList.length === 0}>
+        <button
+          type="button"
+          onClick={() => void onVote()}
+          disabled={busy || selectedList.length === 0 || authorized === false}
+        >
           {busy ? 'Submitting…' : `Cast ${selectedList.length} Yes vote(s)`}
         </button>
       </div>
 
-      {proposals.length === 0 && !loading && <p>No pending governance actions for this hot credential.</p>}
+      {authorized === true && (
+        <p className="status">Hot credential is authorized on the committee.</p>
+      )}
+      {warning && <p className="error">{warning}</p>}
+
+      {proposals.length === 0 && !loading && (
+        <p>No pending governance actions for this hot credential.</p>
+      )}
 
       <ul className="proposal-list">
         {proposals.map((proposal) => (
@@ -141,6 +214,7 @@ export function VotePage() {
                 type="checkbox"
                 checked={selected.has(proposal.proposalId)}
                 onChange={() => toggle(proposal.proposalId)}
+                disabled={authorized === false}
               />
               <span>
                 <strong>{proposal.title}</strong>

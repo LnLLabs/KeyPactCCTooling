@@ -1,5 +1,5 @@
-import { CommitteeColdCredential } from '@evolution-sdk/evolution'
 import { blockfrostFetch } from './config'
+import { ccColdBech32 } from './cip129'
 import {
   applyScriptRequirements,
   buildUnsignedCbor,
@@ -58,7 +58,7 @@ export async function registerHotKey(
 
   return {
     txHash,
-    coldId: CommitteeColdCredential.toBech32(coldCredential),
+    coldId: ccColdBech32(coldCredential),
     hotId: hotWallet.ccHotId,
   }
 }
@@ -79,15 +79,81 @@ export async function fetchCommitteeMembers(): Promise<CommitteeMember[]> {
   return committee.members ?? []
 }
 
+export type AuthorizationCheck = {
+  authorized: boolean
+  member?: CommitteeMember
+  /** Human-readable explanation when not authorized. */
+  detail: string
+}
+
+/**
+ * A successful authCommitteeHot tx is not enough: the cold credential must also
+ * be on the current committee roster (NewCommittee / genesis), and its active
+ * hot must match. Blockfrost /governance/committee is the source of truth.
+ */
+export function checkHotAuthorization(
+  members: CommitteeMember[],
+  hotId: string,
+  coldId?: string,
+): AuthorizationCheck {
+  if (coldId) {
+    const byCold = members.find((member) => member.cc_cold_id === coldId)
+    if (!byCold) {
+      return {
+        authorized: false,
+        detail:
+          `Cold ${coldId} is not on the current constitutional committee. ` +
+          `An authCommitteeHot transaction only links a hot key to that cold; ` +
+          `it does not add the cold to the committee. Voting requires a cold seat ` +
+          `from a NewCommittee action (or the genesis committee).`,
+      }
+    }
+    const hotMatch = byCold.cc_hot_id === hotId
+    const authorized = (byCold.status ?? '').toLowerCase() === 'authorized' && hotMatch
+    if (authorized) {
+      return { authorized: true, member: byCold, detail: 'Hot credential is authorized on the committee.' }
+    }
+    if ((byCold.status ?? '').toLowerCase() === 'resigned') {
+      return {
+        authorized: false,
+        member: byCold,
+        detail: `Cold ${coldId} is on the committee but has resigned.`,
+      }
+    }
+    return {
+      authorized: false,
+      member: byCold,
+      detail:
+        `Cold ${coldId} is on the committee, but its active hot is ` +
+        `${byCold.cc_hot_id ?? 'none'} (status: ${byCold.status ?? 'unknown'}), not ${hotId}. ` +
+        `If you just submitted authCommitteeHot, wait for the indexer — or confirm the CIP-30 wallet matches.`,
+    }
+  }
+
+  const byHot = members.find((member) => member.cc_hot_id === hotId)
+  if (byHot && (byHot.status ?? '').toLowerCase() === 'authorized') {
+    return { authorized: true, member: byHot, detail: 'Hot credential is authorized on the committee.' }
+  }
+  if (byHot) {
+    return {
+      authorized: false,
+      member: byHot,
+      detail: `Hot ${hotId} appears on the committee with status ${byHot.status ?? 'unknown'}.`,
+    }
+  }
+  return {
+    authorized: false,
+    detail:
+      `Hot ${hotId} is not the active hot for any current committee member. ` +
+      `authCommitteeHot alone is not enough — the Keypact cold must already hold a committee seat, ` +
+      `and Blockfrost must list this hot under that member.`,
+  }
+}
+
 export function isHotAuthorized(
   members: CommitteeMember[],
   hotId: string,
   coldId?: string,
 ): boolean {
-  return members.some((member) => {
-    const hotMatch = member.cc_hot_id === hotId
-    const coldMatch = !coldId || member.cc_cold_id === coldId
-    const authorized = (member.status ?? '').toLowerCase() === 'authorized'
-    return hotMatch && coldMatch && authorized
-  })
+  return checkHotAuthorization(members, hotId, coldId).authorized
 }
