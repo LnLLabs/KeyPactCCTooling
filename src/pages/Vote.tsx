@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatError } from '../cardano/config'
 import {
+  inspectProposalsConstitutionality,
+  type ConstitutionalityResult,
+} from '../cardano/constitutionality'
+import {
   castYesVotes,
   explorerTxUrl,
   fetchCommitteeVotes,
@@ -12,6 +16,9 @@ import type { HotWallet } from '../cardano/hotWallet'
 import { fetchCommitteeMembers, checkHotAuthorization } from '../cardano/register'
 import { HotWalletPicker } from '../components/HotWalletPicker'
 import { useApp } from '../context/AppContext'
+
+/** Remove after NewCommittee enacts (epoch 654+): skip per-hot vote filter + unlock cast UI. */
+const TEMP_LIST_ALL_OPEN_PROPOSALS = true
 
 export function VotePage() {
   const { hotWallet, setHotWallet, lastColdId } = useApp()
@@ -25,6 +32,10 @@ export function VotePage() {
   const [txHashes, setTxHashes] = useState<string[]>([])
   const [authorized, setAuthorized] = useState<boolean | null>(null)
   const [switching, setSwitching] = useState(false)
+  const [inspecting, setInspecting] = useState(false)
+  const [inspection, setInspection] = useState<Record<string, ConstitutionalityResult>>({})
+
+  const canCast = TEMP_LIST_ALL_OPEN_PROPOSALS || authorized === true
 
   const selectedList = useMemo(
     () => proposals.filter((proposal) => selected.has(proposal.proposalId)),
@@ -41,17 +52,23 @@ export function VotePage() {
       const check = checkHotAuthorization(members, hotWallet.ccHotId, lastColdId ?? undefined)
       setAuthorized(check.authorized)
       if (!check.authorized) {
-        setWarning(check.detail)
+        setWarning(
+          TEMP_LIST_ALL_OPEN_PROPOSALS
+            ? `${check.detail} Temporary mode: listing active proposals and allowing cast UI anyway.`
+            : check.detail,
+        )
       }
 
-      const [open, votes] = await Promise.all([
-        fetchProposalList(),
-        fetchCommitteeVotes(hotWallet.ccHotId),
-      ])
-      const pending = pendingProposals(open, votes)
-      setProposals(pending)
-      setSelected(new Set(pending.map((proposal) => proposal.proposalId)))
-      setStatus(`${pending.length} pending action${pending.length === 1 ? '' : 's'}`)
+      const open = await fetchProposalList()
+      let listed = open
+      if (!TEMP_LIST_ALL_OPEN_PROPOSALS) {
+        const votes = await fetchCommitteeVotes(hotWallet.ccHotId)
+        listed = pendingProposals(open, votes)
+      }
+      setProposals(listed)
+      setSelected(new Set(listed.map((proposal) => proposal.proposalId)))
+      setInspection({})
+      setStatus(`${listed.length} active governance action${listed.length === 1 ? '' : 's'}`)
     } catch (err) {
       setError(formatError(err))
     } finally {
@@ -80,6 +97,7 @@ export function VotePage() {
     setSelected(new Set())
     setAuthorized(null)
     setTxHashes([])
+    setInspection({})
     setStatus(null)
     setError(null)
     setWarning(null)
@@ -104,7 +122,7 @@ export function VotePage() {
 
   async function onVote() {
     if (!hotWallet) return
-    if (authorized === false) {
+    if (!canCast) {
       setError(
         'Cannot cast committee votes: this hot key is not the active authorized hot for a current committee cold. ' +
           (warning ?? ''),
@@ -124,6 +142,23 @@ export function VotePage() {
       setError(formatError(err))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function onInspect() {
+    if (proposals.length === 0 || inspecting) return
+    setInspecting(true)
+    setError(null)
+    setStatus(`Inspecting constitutionality of ${proposals.length} proposal(s)…`)
+    try {
+      await inspectProposalsConstitutionality(proposals, (proposalId, result) => {
+        setInspection((current) => ({ ...current, [proposalId]: result }))
+      })
+      setStatus('Constitutionality inspection finished')
+    } catch (err) {
+      setError(formatError(err))
+    } finally {
+      setInspecting(false)
     }
   }
 
@@ -173,16 +208,23 @@ export function VotePage() {
       </p>
 
       <div className="row">
-        <button type="button" onClick={() => void refresh()} disabled={loading || busy}>
+        <button type="button" onClick={() => void refresh()} disabled={loading || busy || inspecting}>
           {loading ? 'Loading…' : 'Refresh'}
         </button>
-        <button type="button" onClick={() => setSwitching(true)} disabled={busy}>
+        <button
+          type="button"
+          onClick={() => void onInspect()}
+          disabled={inspecting || loading || proposals.length === 0}
+        >
+          {inspecting ? 'Inspecting…' : 'Inspect constitutionality'}
+        </button>
+        <button type="button" onClick={() => setSwitching(true)} disabled={busy || inspecting}>
           Switch wallet
         </button>
-        <button type="button" onClick={disconnect} disabled={busy}>
+        <button type="button" onClick={disconnect} disabled={busy || inspecting}>
           Disconnect
         </button>
-        <button type="button" onClick={selectAll} disabled={proposals.length === 0 || authorized === false}>
+        <button type="button" onClick={selectAll} disabled={proposals.length === 0 || !canCast}>
           Select all
         </button>
         <button type="button" onClick={selectNone} disabled={selected.size === 0}>
@@ -191,7 +233,7 @@ export function VotePage() {
         <button
           type="button"
           onClick={() => void onVote()}
-          disabled={busy || selectedList.length === 0 || authorized === false}
+          disabled={busy || selectedList.length === 0 || !canCast}
         >
           {busy ? 'Submitting…' : `Cast ${selectedList.length} Yes vote(s)`}
         </button>
@@ -203,29 +245,33 @@ export function VotePage() {
       {warning && <p className="error">{warning}</p>}
 
       {proposals.length === 0 && !loading && (
-        <p>No pending governance actions for this hot credential.</p>
+        <p>No active governance actions in the voting period.</p>
       )}
 
       <ul className="proposal-list">
-        {proposals.map((proposal) => (
-          <li key={proposal.proposalId}>
-            <label>
-              <input
-                type="checkbox"
-                checked={selected.has(proposal.proposalId)}
-                onChange={() => toggle(proposal.proposalId)}
-                disabled={authorized === false}
-              />
-              <span>
-                <strong>{proposal.title}</strong>
-                <small>
-                  {proposal.type} · {proposal.proposalId}
-                  {proposal.expiration != null ? ` · expires epoch ${proposal.expiration}` : ''}
-                </small>
-              </span>
-            </label>
-          </li>
-        ))}
+        {proposals.map((proposal) => {
+          const result = inspection[proposal.proposalId]
+          return (
+            <li key={proposal.proposalId}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={selected.has(proposal.proposalId)}
+                  onChange={() => toggle(proposal.proposalId)}
+                  disabled={!canCast}
+                />
+                <span>
+                  <strong>{proposal.title}</strong>
+                  <small>
+                    {proposal.type} · {proposal.proposalId}
+                    {proposal.expiration != null ? ` · expires epoch ${proposal.expiration}` : ''}
+                  </small>
+                </span>
+              </label>
+              <ConstitutionalityBadge result={result} />
+            </li>
+          )
+        })}
       </ul>
 
       {status && <p className="status">{status}</p>}
@@ -243,4 +289,37 @@ export function VotePage() {
       )}
     </section>
   )
+}
+
+function ConstitutionalityBadge({ result }: { result?: ConstitutionalityResult }) {
+  if (!result) return null
+  if (result.status === 'pending') {
+    return <span className="constitution-badge pending">Queued</span>
+  }
+  if (result.status === 'running') {
+    return <span className="constitution-badge running">Checking…</span>
+  }
+  if (result.status === 'error') {
+    return (
+      <span className="constitution-badge error" title={result.error}>
+        {result.error ?? 'Inspection failed'}
+      </span>
+    )
+  }
+  if (result.verdict === 'fine') {
+    return (
+      <span className="constitution-badge fine" title={result.reasoning ?? 'Fine'} aria-label="Fine">
+        ✓
+      </span>
+    )
+  }
+  if (result.verdict === 'clear_violation') {
+    return (
+      <details className="constitution-flag">
+        <summary>⚠ Clear violation</summary>
+        <p>{result.reasoning}</p>
+      </details>
+    )
+  }
+  return null
 }

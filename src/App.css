@@ -151,6 +151,11 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 10px;
   margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 12px;
 }
 
 .proposal-list label {
@@ -158,12 +163,59 @@ textarea {
   gap: 12px;
   padding: 12px 14px;
   align-items: flex-start;
+  flex: 1;
+  min-width: 0;
 }
 
 .proposal-list small {
   display: block;
   color: var(--text);
   word-break: break-all;
+}
+
+.constitution-badge {
+  flex-shrink: 0;
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.constitution-badge.fine {
+  color: #34d399;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.constitution-badge.pending,
+.constitution-badge.running {
+  color: var(--muted, #9ca3af);
+}
+
+.constitution-badge.error {
+  color: #f87171;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.constitution-flag {
+  flex-shrink: 0;
+  margin-top: 10px;
+  max-width: 280px;
+  font-size: 13px;
+  color: #fbbf24;
+}
+
+.constitution-flag summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.constitution-flag p {
+  margin: 8px 0 4px;
+  color: var(--text);
+  white-space: pre-wrap;
 }
 
 .status,

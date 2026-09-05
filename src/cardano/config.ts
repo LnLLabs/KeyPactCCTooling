@@ -6,6 +6,13 @@ export const BLOCKFROST_PROJECT_ID = import.meta.env.VITE_BLOCKFROST_PROJECT_ID?
 
 export const RATIONALE_PATH = '/rationale/lgtm.jsonld'
 
+export const CONSTITUTION_FALLBACK_PATH = '/constitution/cardano-constitution.md'
+
+export const DEFAULT_CONSTITUTION_URL =
+  'https://raw.githubusercontent.com/IntersectMBO/cardano-constitution/main/cardano-constitution-2/cardano-constitution-2.txt.md'
+
+export const DEEPSEEK_PROXY_URL = '/deepseek'
+
 export function requireBlockfrostProjectId(): string {
   if (!BLOCKFROST_PROJECT_ID) {
     throw new Error(
@@ -77,6 +84,14 @@ export function assertPublicRationaleUrl(url = rationaleUrl()): string {
     )
   }
   return url
+}
+
+export function constitutionUrl(): string {
+  return import.meta.env.VITE_CONSTITUTION_URL?.trim() || DEFAULT_CONSTITUTION_URL
+}
+
+export function deepseekChatUrl(): string {
+  return `${DEEPSEEK_PROXY_URL}/chat/completions`
 }
 
 export function formatError(error: unknown): string {

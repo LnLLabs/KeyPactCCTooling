@@ -21,6 +21,8 @@ export type Proposal = {
   type: string
   title: string
   expiration?: number | null
+  /** Blockfrost governance_description (for LLM inspection). */
+  description?: unknown
 }
 
 export type CommitteeVote = {
@@ -35,12 +37,20 @@ type BlockfrostProposal = {
   tx_hash?: string
   cert_index?: number
   governance_type?: string
-  governance_description?: { title?: string; body?: { title?: string } } | null
+  governance_description?: {
+    title?: string
+    tag?: string
+    body?: { title?: string }
+  } | null
   expiration?: number | null
   expired_epoch?: number | null
   enacted_epoch?: number | null
   dropped_epoch?: number | null
   ratified_epoch?: number | null
+}
+
+type BlockfrostEpoch = {
+  epoch: number
 }
 
 type BlockfrostVote = {
@@ -63,32 +73,86 @@ async function blockfrostPages<T>(path: string): Promise<T[]> {
   return rows
 }
 
+async function mapPool<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  async function worker() {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await fn(items[index]!)
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, items.length) || 1 }, () => worker())
+  await Promise.all(workers)
+  return results
+}
+
+async function fetchProposalDetail(row: BlockfrostProposal): Promise<BlockfrostProposal | null> {
+  const txHash = row.tx_hash
+  if (!txHash) return null
+  const index = row.cert_index ?? 0
+  try {
+    const detail = await blockfrostFetch<BlockfrostProposal>(
+      `/governance/proposals/${txHash}/${index}`,
+    )
+    return {
+      ...row,
+      ...detail,
+      tx_hash: detail.tx_hash ?? txHash,
+      cert_index: detail.cert_index ?? index,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Active voting = not ratified/enacted/expired/dropped, and expiration epoch
+ * is still ahead of (or equal to) the current epoch.
+ *
+ * Blockfrost's proposal *list* omits status fields, so we enrich via the
+ * per-proposal detail endpoint before filtering.
+ */
+function isActiveVotingProposal(row: BlockfrostProposal, currentEpoch: number): boolean {
+  if (
+    row.expired_epoch != null ||
+    row.enacted_epoch != null ||
+    row.dropped_epoch != null ||
+    row.ratified_epoch != null
+  ) {
+    return false
+  }
+  if (row.expiration == null) return false
+  return row.expiration >= currentEpoch
+}
+
+function proposalTitle(row: BlockfrostProposal): string {
+  return (
+    row.governance_description?.body?.title ??
+    row.governance_description?.title ??
+    row.id ??
+    `${row.tx_hash}#${row.cert_index ?? 0}`
+  )
+}
+
 export async function fetchProposalList(): Promise<Proposal[]> {
-  const rows = await blockfrostPages<BlockfrostProposal>('/governance/proposals')
-  return rows
-    .filter(isOpenProposal)
+  const [rows, epoch] = await Promise.all([
+    blockfrostPages<BlockfrostProposal>('/governance/proposals'),
+    blockfrostFetch<BlockfrostEpoch>('/epochs/latest'),
+  ])
+  const details = await mapPool(rows, 12, fetchProposalDetail)
+  return details
+    .filter((row): row is BlockfrostProposal => row != null && isActiveVotingProposal(row, epoch.epoch))
     .map((row) => ({
       proposalId: row.id ?? `${row.tx_hash}#${row.cert_index ?? 0}`,
       txHash: row.tx_hash ?? '',
       index: row.cert_index ?? 0,
       type: row.governance_type ?? 'Unknown',
-      title:
-        row.governance_description?.body?.title ??
-        row.governance_description?.title ??
-        row.id ??
-        `${row.tx_hash}#${row.cert_index ?? 0}`,
+      title: proposalTitle(row),
       expiration: row.expiration,
+      description: row.governance_description ?? null,
     }))
     .filter((proposal) => proposal.txHash)
-}
-
-function isOpenProposal(row: BlockfrostProposal): boolean {
-  return (
-    row.expired_epoch == null &&
-    row.enacted_epoch == null &&
-    row.dropped_epoch == null &&
-    row.ratified_epoch == null
-  )
 }
 
 export async function fetchCommitteeVotes(ccHotId: string): Promise<CommitteeVote[]> {
