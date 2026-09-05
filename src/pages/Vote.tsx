@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatError } from '../cardano/config'
 import {
   inspectProposalsConstitutionality,
+  loadConstitutionMarkdown,
   type ConstitutionalityResult,
 } from '../cardano/constitutionality'
 import {
@@ -14,6 +15,7 @@ import {
 } from '../cardano/governance'
 import type { HotWallet } from '../cardano/hotWallet'
 import { fetchCommitteeMembers, checkHotAuthorization } from '../cardano/register'
+import { DocumentReader, type ReaderTarget } from '../components/DocumentReader'
 import { HotWalletPicker } from '../components/HotWalletPicker'
 import { useApp } from '../context/AppContext'
 
@@ -34,6 +36,7 @@ export function VotePage() {
   const [switching, setSwitching] = useState(false)
   const [inspecting, setInspecting] = useState(false)
   const [inspection, setInspection] = useState<Record<string, ConstitutionalityResult>>({})
+  const [reader, setReader] = useState<ReaderTarget | null>(null)
 
   const canCast = TEMP_LIST_ALL_OPEN_PROPOSALS || authorized === true
 
@@ -162,6 +165,18 @@ export function VotePage() {
     }
   }
 
+  async function onReadConstitution() {
+    setError(null)
+    setStatus('Loading constitution…')
+    try {
+      const doc = await loadConstitutionMarkdown()
+      setReader({ kind: 'constitution', source: doc.source, text: doc.text })
+      setStatus(null)
+    } catch (err) {
+      setError(formatError(err))
+    }
+  }
+
   if (!hotWallet?.api || switching) {
     return (
       <section className="panel">
@@ -218,6 +233,9 @@ export function VotePage() {
         >
           {inspecting ? 'Inspecting…' : 'Inspect constitutionality'}
         </button>
+        <button type="button" onClick={() => void onReadConstitution()} disabled={loading}>
+          Read constitution
+        </button>
         <button type="button" onClick={() => setSwitching(true)} disabled={busy || inspecting}>
           Switch wallet
         </button>
@@ -268,7 +286,16 @@ export function VotePage() {
                   </small>
                 </span>
               </label>
-              <ConstitutionalityBadge result={result} />
+              <div className="proposal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setReader({ kind: 'proposal', proposal })}
+                >
+                  Read
+                </button>
+                <ConstitutionalityBadge result={result} />
+              </div>
             </li>
           )
         })}
@@ -287,6 +314,17 @@ export function VotePage() {
           ))}
         </ul>
       )}
+
+      <DocumentReader
+        target={reader}
+        onClose={() => setReader(null)}
+        onProposalUpdated={(proposal) => {
+          setProposals((current) =>
+            current.map((row) => (row.proposalId === proposal.proposalId ? proposal : row)),
+          )
+          setReader({ kind: 'proposal', proposal })
+        }}
+      />
     </section>
   )
 }

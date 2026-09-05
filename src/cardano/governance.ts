@@ -14,6 +14,17 @@ const MAX_TX_BYTES = 16_000
 const INITIAL_BATCH = 24
 const PAGE_SIZE = 100
 
+export type ProposalMetadata = {
+  url?: string | null
+  hash?: string | null
+  /** CIP-100 / CIP-108 off-chain JSON (when Blockfrost could fetch it). */
+  json?: unknown
+  /** Raw metadata bytes hex, if returned. */
+  bytes?: string | null
+  /** Fetch/validation error from Blockfrost, if any. */
+  error?: string | null
+}
+
 export type Proposal = {
   proposalId: string
   txHash: string
@@ -21,8 +32,10 @@ export type Proposal = {
   type: string
   title: string
   expiration?: number | null
-  /** Blockfrost governance_description (for LLM inspection). */
+  /** On-chain governance action payload from Blockfrost. */
   description?: unknown
+  /** Off-chain anchored metadata (CIP-108), when available. */
+  metadata?: ProposalMetadata | null
 }
 
 export type CommitteeVote = {
@@ -47,6 +60,17 @@ type BlockfrostProposal = {
   enacted_epoch?: number | null
   dropped_epoch?: number | null
   ratified_epoch?: number | null
+}
+
+type BlockfrostProposalMetadata = {
+  id?: string
+  tx_hash?: string
+  cert_index?: number
+  url?: string | null
+  hash?: string | null
+  json_metadata?: unknown
+  bytes?: string | null
+  error?: string | { message?: string; code?: string } | null
 }
 
 type BlockfrostEpoch = {
@@ -106,6 +130,99 @@ async function fetchProposalDetail(row: BlockfrostProposal): Promise<BlockfrostP
   }
 }
 
+function metadataErrorMessage(error: BlockfrostProposalMetadata['error']): string | null {
+  if (error == null) return null
+  if (typeof error === 'string') return error
+  if (typeof error === 'object') {
+    return error.message ?? error.code ?? JSON.stringify(error)
+  }
+  return String(error)
+}
+
+async function fetchAnchorJson(url: string): Promise<unknown | null> {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    const contentType = response.headers.get('content-type') ?? ''
+    if (contentType.includes('json') || url.endsWith('.json') || url.endsWith('.jsonld')) {
+      return await response.json()
+    }
+    const text = await response.text()
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function fetchProposalMetadata(
+  proposal: Pick<Proposal, 'proposalId' | 'txHash' | 'index'>,
+): Promise<ProposalMetadata | null> {
+  const paths = [
+    // Prefer tx/cert path — more reliable than encoding gov_action bech32 ids.
+    `/governance/proposals/${proposal.txHash}/${proposal.index}/metadata`,
+    proposal.proposalId
+      ? `/governance/proposals/${encodeURIComponent(proposal.proposalId)}/metadata`
+      : null,
+  ].filter((path): path is string => Boolean(path))
+
+  let best: ProposalMetadata | null = null
+
+  for (const path of paths) {
+    try {
+      const row = await blockfrostFetch<BlockfrostProposalMetadata>(path)
+      const meta: ProposalMetadata = {
+        url: row.url ?? null,
+        hash: row.hash ?? null,
+        json: row.json_metadata ?? null,
+        bytes: row.bytes ?? null,
+        error: metadataErrorMessage(row.error),
+      }
+
+      if (meta.json == null && meta.url) {
+        const fetched = await fetchAnchorJson(meta.url)
+        if (fetched != null) {
+          meta.json = fetched
+          meta.error = null
+        }
+      }
+
+      // Prefer any result that actually has CIP-108 JSON.
+      if (meta.json != null) return meta
+      if (!best || (meta.url && !best.url)) best = meta
+    } catch {
+      // try next path
+    }
+  }
+
+  return best
+}
+
+/** Ensure off-chain metadata is attached (lazy load for Read / DeepSeek preview). */
+export async function ensureProposalMetadata(proposal: Proposal): Promise<Proposal> {
+  if (proposal.metadata?.json != null) return proposal
+  const metadata = await fetchProposalMetadata(proposal)
+  if (!metadata) return proposal
+  const title = metadataTitle(metadata) ?? proposal.title
+  return { ...proposal, title, metadata }
+}
+
+function metadataTitle(metadata: ProposalMetadata | null | undefined): string | null {
+  const json = metadata?.json
+  if (!json || typeof json !== 'object') return null
+  const root = json as Record<string, unknown>
+  const body = root.body
+  if (body && typeof body === 'object') {
+    const title = (body as Record<string, unknown>).title
+    if (typeof title === 'string' && title.trim()) return title.trim()
+  }
+  if (typeof root.title === 'string' && root.title.trim()) return root.title.trim()
+  return null
+}
+
 /**
  * Active voting = not ratified/enacted/expired/dropped, and expiration epoch
  * is still ahead of (or equal to) the current epoch.
@@ -141,9 +258,12 @@ export async function fetchProposalList(): Promise<Proposal[]> {
     blockfrostFetch<BlockfrostEpoch>('/epochs/latest'),
   ])
   const details = await mapPool(rows, 12, fetchProposalDetail)
-  return details
-    .filter((row): row is BlockfrostProposal => row != null && isActiveVotingProposal(row, epoch.epoch))
-    .map((row) => ({
+  const active = details.filter(
+    (row): row is BlockfrostProposal => row != null && isActiveVotingProposal(row, epoch.epoch),
+  )
+
+  const withMetadata = await mapPool(active, 8, async (row) => {
+    const base: Proposal = {
       proposalId: row.id ?? `${row.tx_hash}#${row.cert_index ?? 0}`,
       txHash: row.tx_hash ?? '',
       index: row.cert_index ?? 0,
@@ -151,8 +271,15 @@ export async function fetchProposalList(): Promise<Proposal[]> {
       title: proposalTitle(row),
       expiration: row.expiration,
       description: row.governance_description ?? null,
-    }))
-    .filter((proposal) => proposal.txHash)
+      metadata: null,
+    }
+    if (!base.txHash) return null
+    const metadata = await fetchProposalMetadata(base)
+    const title = metadataTitle(metadata) ?? base.title
+    return { ...base, title, metadata }
+  })
+
+  return withMetadata.filter((proposal): proposal is Proposal => proposal != null)
 }
 
 export async function fetchCommitteeVotes(ccHotId: string): Promise<CommitteeVote[]> {

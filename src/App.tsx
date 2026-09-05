@@ -1,5 +1,6 @@
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { AppProvider, useApp } from './context/AppContext'
+import { LibraryPage } from './pages/Library'
 import { RegisterPage } from './pages/Register'
 import { VotePage } from './pages/Vote'
 import './App.css'
@@ -17,6 +18,7 @@ function Shell() {
         <nav>
           <NavLink to="/register">Register</NavLink>
           <NavLink to="/vote">Vote</NavLink>
+          <NavLink to="/library">Library</NavLink>
         </nav>
         <div className="session">
           <span>{keypactName ? `Cold: ${keypactName}` : 'Keypact disconnected'}</span>
@@ -30,6 +32,7 @@ function Shell() {
           <Route path="/" element={<RegisterPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/vote" element={<VotePage />} />
+          <Route path="/library" element={<LibraryPage />} />
         </Routes>
       </main>
     </div>

@@ -3,7 +3,7 @@ import {
   constitutionUrl,
   deepseekChatUrl,
 } from './config'
-import type { Proposal } from './governance'
+import { ensureProposalMetadata, type Proposal } from './governance'
 
 export type ConstitutionalityVerdict = 'fine' | 'clear_violation'
 
@@ -36,6 +36,56 @@ Rules:
   {"verdict":"fine"|"clear_violation","reasoning":"short explanation"}
 - For "fine", keep reasoning brief (one or two sentences).
 - For "clear_violation", cite the constitutional article/section and explain the conflict.`
+
+export function proposalPayloadObject(proposal: Proposal) {
+  const offchain = proposal.metadata?.json ?? null
+  return {
+    id: proposal.proposalId,
+    tx_hash: proposal.txHash,
+    index: proposal.index,
+    type: proposal.type,
+    title: proposal.title,
+    expiration_epoch: proposal.expiration ?? null,
+    // Human-readable CIP-108 document (primary signal for constitutionality).
+    offchain_metadata: offchain,
+    metadata_anchor: {
+      url: proposal.metadata?.url ?? null,
+      hash: proposal.metadata?.hash ?? null,
+      error: proposal.metadata?.error ?? null,
+    },
+    // On-chain action payload (withdrawals, params, etc.).
+    governance_description: proposal.description ?? null,
+  }
+}
+
+export function proposalPayload(proposal: Proposal): string {
+  return JSON.stringify(proposalPayloadObject(proposal), null, 2)
+}
+
+export function buildDeepSeekConstitutionMessage(constitution: string): string {
+  return `## Cardano Constitution\n\n${constitution}`
+}
+
+export function buildDeepSeekProposalMessage(proposal: Proposal): string {
+  return (
+    `## Governance proposal to review\n\n\`\`\`json\n${proposalPayload(proposal)}\n\`\`\`\n\n` +
+    `Using the Constitution from the previous message, return JSON with verdict and reasoning only.`
+  )
+}
+
+/** OpenAI-compatible chat messages: instructions, then constitution, then proposal. */
+export function buildDeepSeekRequestPreview(proposal: Proposal, constitution: string) {
+  return {
+    model: 'deepseek-v4-flash',
+    response_format: { type: 'json_object' as const },
+    temperature: 0.2,
+    messages: [
+      { role: 'system' as const, content: SYSTEM_PROMPT },
+      { role: 'user' as const, content: buildDeepSeekConstitutionMessage(constitution) },
+      { role: 'user' as const, content: buildDeepSeekProposalMessage(proposal) },
+    ],
+  }
+}
 
 let cachedConstitution: { source: string; text: string } | null = null
 
@@ -75,22 +125,6 @@ export async function loadConstitutionMarkdown(force = false): Promise<{ source:
   }
 }
 
-function proposalPayload(proposal: Proposal): string {
-  return JSON.stringify(
-    {
-      id: proposal.proposalId,
-      tx_hash: proposal.txHash,
-      index: proposal.index,
-      type: proposal.type,
-      title: proposal.title,
-      expiration_epoch: proposal.expiration ?? null,
-      governance_description: proposal.description ?? null,
-    },
-    null,
-    2,
-  )
-}
-
 function parseVerdict(content: string): { verdict: ConstitutionalityVerdict; reasoning: string } {
   const trimmed = content.trim()
   const jsonText = trimmed.startsWith('{')
@@ -116,26 +150,13 @@ export async function evaluateProposalConstitutionality(
   proposal: Proposal,
   constitution: string,
 ): Promise<{ verdict: ConstitutionalityVerdict; reasoning: string }> {
+  const request = buildDeepSeekRequestPreview(proposal, constitution)
   const response = await fetch(deepseekChatUrl(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: 'deepseek-v4-flash',
-      response_format: { type: 'json_object' },
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content:
-            `## Cardano Constitution\n\n${constitution}\n\n` +
-            `## Governance proposal to review\n\n\`\`\`json\n${proposalPayload(proposal)}\n\`\`\`\n\n` +
-            `Return JSON with verdict and reasoning only.`,
-        },
-      ],
-    }),
+    body: JSON.stringify(request),
   })
 
   const raw = await response.text()
@@ -183,7 +204,8 @@ export async function inspectProposalsConstitutionality(
       const proposal = proposals[index]!
       onUpdate(proposal.proposalId, { status: 'running' })
       try {
-        const { verdict, reasoning } = await evaluateProposalConstitutionality(proposal, constitution)
+        const enriched = await ensureProposalMetadata(proposal)
+        const { verdict, reasoning } = await evaluateProposalConstitutionality(enriched, constitution)
         onUpdate(proposal.proposalId, { status: 'done', verdict, reasoning })
       } catch (error) {
         onUpdate(proposal.proposalId, {
