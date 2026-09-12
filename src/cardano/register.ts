@@ -124,9 +124,9 @@ export function checkHotAuthorization(
       authorized: false,
       member: byCold,
       detail:
-        `Cold ${coldId} is on the committee, but its active hot is ` +
-        `${byCold.cc_hot_id ?? 'none'} (status: ${byCold.status ?? 'unknown'}), not ${hotId}. ` +
-        `If you just submitted authCommitteeHot, wait for the indexer — or confirm the CIP-30 wallet matches.`,
+        `Cold ${coldId} is on the committee (status: ${byCold.status ?? 'unknown'}), ` +
+        `but its active hot is ${byCold.cc_hot_id ?? 'none'}, not the connected ${hotId}. ` +
+        `Connect that CIP-30 wallet, or re-run Register to authorize this hot.`,
     }
   }
 
@@ -145,8 +145,8 @@ export function checkHotAuthorization(
     authorized: false,
     detail:
       `Hot ${hotId} is not the active hot for any current committee member. ` +
-      `authCommitteeHot alone is not enough — the Keypact cold must already hold a committee seat, ` +
-      `and Blockfrost must list this hot under that member.`,
+      `If your Keypact cold already has a seat, you are likely connected to a different CIP-30 wallet ` +
+      `than the one that was authorized — check Register / Blockfrost for the active hot, or re-authorize.`,
   }
 }
 

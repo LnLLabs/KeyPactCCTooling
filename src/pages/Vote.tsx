@@ -19,11 +19,15 @@ import { DocumentReader, type ReaderTarget } from '../components/DocumentReader'
 import { HotWalletPicker } from '../components/HotWalletPicker'
 import { useApp } from '../context/AppContext'
 
-/** Remove after NewCommittee enacts (epoch 654+): skip per-hot vote filter + unlock cast UI. */
+/** Remove after hot matches the seated cold's active credential on Blockfrost. */
 const TEMP_LIST_ALL_OPEN_PROPOSALS = true
+
+/** Known Keypact cold from registration / NewCommittee seat (fallback if session empty). */
+const KNOWN_COLD_ID = 'cc_cold1zd7rfcpypwzq98sfxt673kq67s4x8a2aumdrrutwrxcltdq9jkwn2'
 
 export function VotePage() {
   const { hotWallet, setHotWallet, lastColdId } = useApp()
+  const coldId = lastColdId ?? KNOWN_COLD_ID
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
@@ -52,7 +56,7 @@ export function VotePage() {
     setWarning(null)
     try {
       const members = await fetchCommitteeMembers()
-      const check = checkHotAuthorization(members, hotWallet.ccHotId, lastColdId ?? undefined)
+      const check = checkHotAuthorization(members, hotWallet.ccHotId, coldId)
       setAuthorized(check.authorized)
       if (!check.authorized) {
         setWarning(
@@ -77,7 +81,7 @@ export function VotePage() {
     } finally {
       setLoading(false)
     }
-  }, [hotWallet, lastColdId])
+  }, [hotWallet, coldId])
 
   useEffect(() => {
     if (hotWallet) void refresh()
@@ -212,12 +216,8 @@ export function VotePage() {
       <h1>Pending votes</h1>
       <p className="lead">
         Voting as <code>{hotWallet.ccHotId}</code> through <code>{hotWallet.name}</code>
-        {lastColdId ? (
-          <>
-            {' '}
-            (cold <code>{lastColdId}</code>)
-          </>
-        ) : null}
+        {' '}
+        (cold <code>{coldId}</code>)
         . Selected actions are cast Yes with rationale <code>lgtm</code> in a single transaction when
         they fit. Approve the CIP-30 prompt to sign.
       </p>
