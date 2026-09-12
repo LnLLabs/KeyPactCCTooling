@@ -18,7 +18,15 @@ export function HotWalletPicker({ hotWallet, disabled, onConnected, onError }: P
   const [busyKey, setBusyKey] = useState<string | null>(null)
 
   useEffect(() => {
-    const timer = window.setInterval(() => setWallets(listCip30Wallets()), 1500)
+    const refresh = () => {
+      try {
+        setWallets(listCip30Wallets())
+      } catch {
+        // Wallet injectors (Brave + Typhon) can throw on enumeration; keep last list.
+      }
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 1500)
     return () => window.clearInterval(timer)
   }, [])
 

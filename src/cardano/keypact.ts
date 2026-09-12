@@ -49,15 +49,38 @@ declare global {
 const WALLET_KEYS = ['keypact', 'broclan'] as const
 
 export function detectKeypact(): { key: string; wallet: InjectedWallet } | null {
-  const cardano = window.cardano
-  if (!cardano) return null
-  for (const key of WALLET_KEYS) {
-    const wallet = cardano[key]
-    if (wallet?.enable) return { key, wallet }
+  let cardano: Record<string, InjectedWallet | undefined> | undefined
+  try {
+    cardano = window.cardano
+  } catch {
+    return null
   }
-  for (const [key, wallet] of Object.entries(cardano)) {
-    if (wallet?.enable && /keypact|broclan/i.test(key + (wallet.name ?? ''))) {
-      return { key, wallet }
+  if (!cardano) return null
+
+  for (const key of WALLET_KEYS) {
+    try {
+      const wallet = cardano[key]
+      if (wallet?.enable) return { key, wallet }
+    } catch {
+      // Brave proxy invariant on some injectors
+    }
+  }
+
+  const keys = new Set<string>(WALLET_KEYS)
+  try {
+    for (const key of Object.getOwnPropertyNames(cardano)) keys.add(key)
+  } catch {
+    // stick to known keys
+  }
+
+  for (const key of keys) {
+    try {
+      const wallet = cardano[key]
+      if (wallet?.enable && /keypact|broclan/i.test(key + (wallet.name ?? ''))) {
+        return { key, wallet }
+      }
+    } catch {
+      // continue
     }
   }
   return null

@@ -15,12 +15,51 @@ const PREFERRED_ORDER = [
   'vespr',
   'nami',
   'typhoncip30',
+  'typhon',
   'gerowallet',
   'nufi',
   'yoroi',
   'begin',
   'tokeo',
+  'flint',
+  'exodus',
 ]
+
+/** Brave (and some wallet injectors) wrap window.cardano in Proxies that throw if
+ *  enumerated via Object.entries/keys. Prefer named lookups; never let listing crash the UI. */
+function cardanoNamespace(): Record<string, InjectedWallet | undefined> | null {
+  try {
+    return window.cardano ?? null
+  } catch {
+    return null
+  }
+}
+
+function walletKeys(cardano: Record<string, InjectedWallet | undefined>): string[] {
+  const keys = new Set<string>(PREFERRED_ORDER)
+  try {
+    for (const key of Object.getOwnPropertyNames(cardano)) keys.add(key)
+  } catch {
+    // ignore proxy invariant errors while enumerating
+  }
+  try {
+    for (const key of Object.keys(cardano)) keys.add(key)
+  } catch {
+    // ignore
+  }
+  return [...keys]
+}
+
+function readInjectedWallet(
+  cardano: Record<string, InjectedWallet | undefined>,
+  key: string,
+): InjectedWallet | undefined {
+  try {
+    return cardano[key]
+  } catch {
+    return undefined
+  }
+}
 
 export type Cip30WalletApi = {
   getUsedAddresses?: () => Promise<string[]>
@@ -53,19 +92,36 @@ export type DetectedCip30 = {
 }
 
 export function listCip30Wallets(): DetectedCip30[] {
-  const cardano = window.cardano
+  const cardano = cardanoNamespace()
   if (!cardano) return []
   const found: DetectedCip30[] = []
-  for (const [key, wallet] of Object.entries(cardano)) {
-    if (!wallet?.enable || SKIP_KEYS.has(key)) continue
-    if (/keypact|broclan/i.test(key + (wallet.name ?? ''))) continue
+  const seen = new Set<string>()
+
+  for (const key of walletKeys(cardano)) {
+    if (SKIP_KEYS.has(key) || seen.has(key)) continue
+    const wallet = readInjectedWallet(cardano, key)
+    if (!wallet) continue
+    let enable: InjectedWallet['enable'] | undefined
+    let name: string | undefined
+    let icon: string | undefined
+    try {
+      enable = wallet.enable
+      name = wallet.name
+      icon = wallet.icon
+    } catch {
+      continue
+    }
+    if (typeof enable !== 'function') continue
+    if (/keypact|broclan/i.test(key + (name ?? ''))) continue
+    seen.add(key)
     found.push({
       key,
-      name: wallet.name ?? key,
-      icon: wallet.icon,
+      name: name ?? key,
+      icon,
       wallet,
     })
   }
+
   return found.sort((a, b) => {
     const ai = PREFERRED_ORDER.indexOf(a.key)
     const bi = PREFERRED_ORDER.indexOf(b.key)
