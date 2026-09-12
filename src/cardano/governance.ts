@@ -262,7 +262,7 @@ export async function fetchProposalList(): Promise<Proposal[]> {
     (row): row is BlockfrostProposal => row != null && isActiveVotingProposal(row, epoch.epoch),
   )
 
-  const withMetadata = await mapPool(active, 8, async (row) => {
+  const withMetadata = await mapPool(active, 8, async (row): Promise<Proposal | null> => {
     const base: Proposal = {
       proposalId: row.id ?? `${row.tx_hash}#${row.cert_index ?? 0}`,
       txHash: row.tx_hash ?? '',
@@ -301,15 +301,35 @@ export async function fetchCommitteeVotes(ccHotId: string): Promise<CommitteeVot
 }
 
 export function pendingProposals(proposals: Proposal[], votes: CommitteeVote[]): Proposal[] {
-  const voted = new Set(votes.map((vote) => vote.proposalId))
+  return partitionProposalsByVote(proposals, votes).pending
+}
+
+export type VotedProposal = {
+  proposal: Proposal
+  vote: string | null
+}
+
+export function partitionProposalsByVote(
+  proposals: Proposal[],
+  votes: CommitteeVote[],
+): { pending: Proposal[]; voted: VotedProposal[] } {
+  const byKey = new Map<string, CommitteeVote>()
   for (const vote of votes) {
+    if (vote.proposalId) byKey.set(vote.proposalId, vote)
     if (vote.txHash != null && vote.index != null) {
-      voted.add(`${vote.txHash}#${vote.index}`)
+      byKey.set(`${vote.txHash}#${vote.index}`, vote)
     }
   }
-  return proposals.filter(
-    (proposal) => !voted.has(proposal.proposalId) && !voted.has(`${proposal.txHash}#${proposal.index}`),
-  )
+
+  const pending: Proposal[] = []
+  const voted: VotedProposal[] = []
+  for (const proposal of proposals) {
+    const match =
+      byKey.get(proposal.proposalId) ?? byKey.get(`${proposal.txHash}#${proposal.index}`)
+    if (match) voted.push({ proposal, vote: match.vote ?? null })
+    else pending.push(proposal)
+  }
+  return { pending, voted }
 }
 
 export async function loadLgtmAnchor(): Promise<Anchor.Anchor> {

@@ -1,30 +1,31 @@
-export const BLOCKFROST_URL =
-  import.meta.env.VITE_BLOCKFROST_URL?.trim() ||
-  (import.meta.env.DEV ? '/blockfrost' : 'https://cardano-mainnet.blockfrost.io/api/v0')
+import {
+  getBlockfrostProjectId,
+  getBlockfrostUrl,
+  getConstitutionUrl,
+  getDeepseekApiKey,
+  getRationaleUrl,
+  DEFAULT_CONSTITUTION_URL,
+} from './settings'
 
-export const BLOCKFROST_PROJECT_ID = import.meta.env.VITE_BLOCKFROST_PROJECT_ID?.trim() || ''
+export { DEFAULT_CONSTITUTION_URL }
 
 export const RATIONALE_PATH = '/rationale/lgtm.jsonld'
 
 export const CONSTITUTION_FALLBACK_PATH = '/constitution/cardano-constitution.md'
 
-export const DEFAULT_CONSTITUTION_URL =
-  'https://raw.githubusercontent.com/IntersectMBO/cardano-constitution/main/cardano-constitution-2/cardano-constitution-2.txt.md'
-
-export const DEEPSEEK_PROXY_URL = '/deepseek'
-
 export function requireBlockfrostProjectId(): string {
-  if (!BLOCKFROST_PROJECT_ID) {
+  const id = getBlockfrostProjectId()
+  if (!id) {
     throw new Error(
-      'Missing VITE_BLOCKFROST_PROJECT_ID. Copy .env.example to .env and set your Blockfrost project id.',
+      'Missing Blockfrost project id. Open Settings and save your project id (stored only in this browser).',
     )
   }
-  return BLOCKFROST_PROJECT_ID
+  return id
 }
 
 export function blockfrostConfig() {
   return {
-    baseUrl: BLOCKFROST_URL,
+    baseUrl: getBlockfrostUrl(),
     projectId: requireBlockfrostProjectId(),
   }
 }
@@ -38,7 +39,8 @@ export function blockfrostHeaders(extra?: HeadersInit): HeadersInit {
 }
 
 export async function blockfrostFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${BLOCKFROST_URL}${path.startsWith('/') ? path : `/${path}`}`
+  const base = getBlockfrostUrl()
+  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
   const response = await fetch(url, {
     ...init,
     headers: blockfrostHeaders(init?.headers),
@@ -51,9 +53,7 @@ export async function blockfrostFetch<T>(path: string, init?: RequestInit): Prom
 }
 
 export function rationaleUrl(): string {
-  const configured = import.meta.env.VITE_RATIONALE_URL?.trim()
-  if (configured) return configured
-  return `${window.location.origin}${RATIONALE_PATH}`
+  return getRationaleUrl()
 }
 
 /** Anchors are fetched by chain indexers; localhost / private hosts are not usable on mainnet. */
@@ -80,18 +80,37 @@ export function assertPublicRationaleUrl(url = rationaleUrl()): string {
   if (local) {
     throw new Error(
       `Rationale URL cannot be a local address (${url}). ` +
-        `Set VITE_RATIONALE_URL to a public HTTPS URL of /rationale/lgtm.jsonld (anchors are resolved off-device).`,
+        `Set a public HTTPS URL in Settings (anchors are resolved off-device).`,
     )
   }
   return url
 }
 
 export function constitutionUrl(): string {
-  return import.meta.env.VITE_CONSTITUTION_URL?.trim() || DEFAULT_CONSTITUTION_URL
+  return getConstitutionUrl()
 }
 
 export function deepseekChatUrl(): string {
-  return `${DEEPSEEK_PROXY_URL}/chat/completions`
+  if (import.meta.env.DEV) return '/deepseek/chat/completions'
+  return 'https://api.deepseek.com/chat/completions'
+}
+
+export function requireDeepseekApiKey(): string {
+  const key = getDeepseekApiKey()
+  if (!key) {
+    throw new Error(
+      'Missing DeepSeek API key. Open Settings and save your key (stored only in this browser).',
+    )
+  }
+  return key
+}
+
+export function deepseekHeaders(extra?: HeadersInit): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${requireDeepseekApiKey()}`,
+    ...extra,
+  }
 }
 
 export function formatError(error: unknown): string {

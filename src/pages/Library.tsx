@@ -3,11 +3,14 @@ import { formatError } from '../cardano/config'
 import { loadConstitutionMarkdown } from '../cardano/constitutionality'
 import { fetchProposalList, type Proposal } from '../cardano/governance'
 import { DocumentReader, type ReaderTarget } from '../components/DocumentReader'
+import { MissingSettingsBanner } from '../components/SettingsGate'
 import { renderMarkdownLite } from '../lib/readableText'
+import { useApp } from '../context/AppContext'
 
 type Tab = 'proposals' | 'constitution'
 
 export function LibraryPage() {
+  const { settingsReady } = useApp()
   const [tab, setTab] = useState<Tab>('proposals')
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [loadingList, setLoadingList] = useState(false)
@@ -19,6 +22,11 @@ export function LibraryPage() {
   const [query, setQuery] = useState('')
 
   const loadProposals = useCallback(async () => {
+    if (!settingsReady) {
+      setError(null)
+      setProposals([])
+      return
+    }
     setLoadingList(true)
     setError(null)
     try {
@@ -29,7 +37,7 @@ export function LibraryPage() {
     } finally {
       setLoadingList(false)
     }
-  }, [])
+  }, [settingsReady])
 
   const loadConstitution = useCallback(async (force = false) => {
     setLoadingConstitution(true)
@@ -69,6 +77,7 @@ export function LibraryPage() {
   return (
     <section className="panel library-page">
       <h1>Library</h1>
+      {!settingsReady && <MissingSettingsBanner />}
       <p className="lead">
         Read active governance actions and the Cardano Constitution at your own pace — no wallet
         required.
@@ -108,8 +117,11 @@ export function LibraryPage() {
               onChange={(event) => setQuery(event.target.value)}
               aria-label="Filter proposals"
             />
-            <button type="button" onClick={() => void loadProposals()} disabled={loadingList}>
-              {loadingList ? 'Loading…' : 'Refresh'}
+            <button
+              type="button"
+              onClick={() => void loadProposals()}
+              disabled={!settingsReady || loadingList}
+            >              {loadingList ? 'Loading…' : 'Refresh'}
             </button>
           </div>
 

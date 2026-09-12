@@ -1,8 +1,9 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import type { HotWallet } from '../cardano/hotWallet'
 import type { Cip141Api } from '../cardano/keypact'
+import { hasBlockfrostConfigured, seedSettingsFromEnvOnce } from '../cardano/settings'
 
-const LAST_COLD_KEY = 'keypacktcc.lastColdId'
+const LAST_COLD_KEY = 'bsp.cc.lastColdId'
 
 type AppState = {
   hotWallet: HotWallet | null
@@ -12,6 +13,9 @@ type AppState = {
   setKeypact: (name: string, api: Cip141Api) => void
   lastColdId: string | null
   setLastColdId: (id: string | null) => void
+  settingsReady: boolean
+  settingsVersion: number
+  refreshSettings: () => void
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -24,11 +28,14 @@ function readStoredColdId(): string | null {
   }
 }
 
+seedSettingsFromEnvOnce()
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [hotWallet, setHotWallet] = useState<HotWallet | null>(null)
   const [keypactName, setKeypactName] = useState<string | null>(null)
   const [cip141, setCip141] = useState<Cip141Api | null>(null)
   const [lastColdId, setLastColdIdState] = useState<string | null>(() => readStoredColdId())
+  const [settingsVersion, setSettingsVersion] = useState(0)
 
   function setLastColdId(id: string | null) {
     setLastColdIdState(id)
@@ -39,6 +46,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // ignore storage failures
     }
   }
+
+  function refreshSettings() {
+    setSettingsVersion((n) => n + 1)
+  }
+
+  const settingsReady = hasBlockfrostConfigured()
 
   const value = useMemo<AppState>(
     () => ({
@@ -52,8 +65,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
       lastColdId,
       setLastColdId,
+      settingsReady,
+      settingsVersion,
+      refreshSettings,
     }),
-    [hotWallet, keypactName, cip141, lastColdId],
+    [hotWallet, keypactName, cip141, lastColdId, settingsReady, settingsVersion],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

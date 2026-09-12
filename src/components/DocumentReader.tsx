@@ -312,7 +312,7 @@ function DeepSeekPreview({
 
       <h3 style={{ marginTop: 24 }}>Full request body</h3>
       <p className="reader-meta" style={{ marginBottom: 12 }}>
-        Exact JSON posted to <code>/deepseek/chat/completions</code>.
+        Exact JSON posted to DeepSeek chat completions.
       </p>
       {loading && <p className="reader-empty">Building full request preview…</p>}
       {error && <p className="error">{error}</p>}

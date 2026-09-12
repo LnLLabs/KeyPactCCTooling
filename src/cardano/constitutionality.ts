@@ -2,6 +2,7 @@ import {
   CONSTITUTION_FALLBACK_PATH,
   constitutionUrl,
   deepseekChatUrl,
+  deepseekHeaders,
 } from './config'
 import { ensureProposalMetadata, type Proposal } from './governance'
 
@@ -89,6 +90,10 @@ export function buildDeepSeekRequestPreview(proposal: Proposal, constitution: st
 
 let cachedConstitution: { source: string; text: string } | null = null
 
+export function clearConstitutionCache() {
+  cachedConstitution = null
+}
+
 export async function loadConstitutionMarkdown(force = false): Promise<{ source: string; text: string }> {
   if (!force && cachedConstitution) return cachedConstitution
 
@@ -153,9 +158,7 @@ export async function evaluateProposalConstitutionality(
   const request = buildDeepSeekRequestPreview(proposal, constitution)
   const response = await fetch(deepseekChatUrl(), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: deepseekHeaders(),
     body: JSON.stringify(request),
   })
 
@@ -163,7 +166,7 @@ export async function evaluateProposalConstitutionality(
   if (!response.ok) {
     throw new Error(
       `DeepSeek request failed (${response.status}): ${raw.slice(0, 400) || response.statusText}. ` +
-        `Ensure DEEPSEEK_API_KEY is set in .env and the Vite /deepseek proxy is running.`,
+        `Ensure your DeepSeek API key is saved in Settings.`,
     )
   }
 

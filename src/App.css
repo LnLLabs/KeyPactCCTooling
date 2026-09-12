@@ -6,9 +6,38 @@
 .top {
   display: grid;
   gap: 16px;
-  padding-bottom: 24px;
+  padding: 8px 0 24px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 28px;
+  background: transparent;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.brand-logo {
+  display: block;
+  width: min(220px, 70vw);
+  height: auto;
+}
+
+.brand-copy .brand {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 12px;
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-family: var(--sans);
+  font-weight: 600;
+}
+
+.brand-copy h1 {
+  font-size: 28px;
+  margin: 0;
 }
 
 .brand {
@@ -34,11 +63,16 @@ nav a {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 6px 14px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
 }
 
 nav a.active {
   background: var(--accent-bg);
   border-color: var(--accent-border);
+  color: var(--accent);
 }
 
 .session {
@@ -56,6 +90,20 @@ nav a.active {
 .lead {
   max-width: 68ch;
   margin-bottom: 24px;
+}
+
+.vote-section {
+  margin: 28px 0 8px;
+}
+
+.vote-section h2 {
+  margin-bottom: 4px;
+}
+
+.section-lead {
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: var(--text);
 }
 
 .card {
@@ -543,3 +591,53 @@ textarea {
 a {
   color: var(--accent);
 }
+
+.settings-banner a {
+  color: #fca5a5;
+  text-decoration: underline;
+}
+
+.settings-form {
+  display: grid;
+  gap: 16px;
+  max-width: 640px;
+  margin-top: 8px;
+}
+
+.settings-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.settings-form input[type='text'],
+.settings-form input[type='password'],
+.settings-form input[type='url'] {
+  font: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-h);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.settings-check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--text-h);
+}
+

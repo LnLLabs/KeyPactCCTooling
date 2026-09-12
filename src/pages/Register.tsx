@@ -9,11 +9,20 @@ import {
   registerHotKey,
 } from '../cardano/register'
 import { HotWalletPicker } from '../components/HotWalletPicker'
+import { MissingSettingsBanner } from '../components/SettingsGate'
 import { useApp } from '../context/AppContext'
 
 export function RegisterPage() {
-  const { hotWallet, setHotWallet, keypactName, setKeypact, cip141, lastColdId, setLastColdId } =
-    useApp()
+  const {
+    hotWallet,
+    setHotWallet,
+    keypactName,
+    setKeypact,
+    cip141,
+    lastColdId,
+    setLastColdId,
+    settingsReady,
+  } = useApp()
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
@@ -45,6 +54,10 @@ export function RegisterPage() {
   }
 
   async function onRegister() {
+    if (!settingsReady) {
+      setError('Configure Blockfrost in Settings first')
+      return
+    }
     if (!cip141) {
       setError('Connect Keypact first')
       return
@@ -100,6 +113,7 @@ export function RegisterPage() {
   return (
     <section className="panel">
       <h1>Hot key registration</h1>
+      {!settingsReady && <MissingSettingsBanner />}
       <p className="lead">
         The cold credential is your Keypact smart wallet script. The hot credential is the payment
         key of a CIP-30 wallet. This page builds an <code>authCommitteeHot</code> transaction with
@@ -149,8 +163,11 @@ export function RegisterPage() {
 
       <div className="card">
         <h2>3. Authorize on-chain</h2>
-        <button type="button" onClick={onRegister} disabled={busy || !cip141 || !hotWallet}>
-          {busy ? 'Submitting…' : 'Register hot key'}
+        <button
+          type="button"
+          onClick={onRegister}
+          disabled={!settingsReady || busy || !cip141 || !hotWallet}
+        >          {busy ? 'Submitting…' : 'Register hot key'}
         </button>
         {authorized && <p className="ok">Hot key is authorized.</p>}
         {txHash && (
