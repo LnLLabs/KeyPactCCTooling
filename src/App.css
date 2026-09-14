@@ -85,6 +85,8 @@ nav a.active {
   gap: 4px;
   font-size: 13px;
   word-break: break-all;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .panel h1 {
@@ -95,6 +97,11 @@ nav a.active {
 .lead {
   max-width: 68ch;
   margin-bottom: 24px;
+  overflow-wrap: anywhere;
+}
+
+.lead code {
+  display: inline;
 }
 
 .vote-section {
@@ -181,6 +188,20 @@ textarea {
   display: grid;
   gap: 12px;
   margin: 16px 0 0;
+}
+
+.vote-identity {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--social-bg);
+}
+
+.vote-identity code {
+  display: block;
+  padding: 0;
+  background: transparent;
 }
 
 .meta dt {

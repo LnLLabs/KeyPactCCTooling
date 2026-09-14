@@ -216,9 +216,20 @@ export function VotePage() {
         <h1>Vote</h1>
         <p className="lead">Connect the CIP-30 wallet whose payment key is the authorized hot credential.</p>
         {switching && hotWallet && (
-          <p className="status">
-            Currently connected: <code>{hotWallet.name}</code> · <code>{hotWallet.ccHotId}</code>
-          </p>
+          <dl className="meta vote-identity">
+            <div>
+              <dt>Currently connected</dt>
+              <dd>
+                <code>{hotWallet.name}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Hot</dt>
+              <dd>
+                <code>{hotWallet.ccHotId}</code>
+              </dd>
+            </div>
+          </dl>
         )}
         <HotWalletPicker
           hotWallet={switching ? hotWallet : null}
@@ -245,12 +256,23 @@ export function VotePage() {
       <h1>Vote</h1>
       {!settingsReady && <MissingSettingsBanner />}
       <p className="lead">
-        Voting as <code>{hotWallet.ccHotId}</code> through <code>{hotWallet.name}</code>
-        {' '}
-        (cold <code>{coldId}</code>)
-        . Pending actions are selected by default. Already-voted actions stay listed so you can
+        Pending actions are selected by default. Already-voted actions stay listed so you can
         re-cast Yes with rationale <code>lgtm</code> if you need to change them.
       </p>
+      <dl className="meta vote-identity">
+        <div>
+          <dt>Hot</dt>
+          <dd>
+            <code>{hotWallet.ccHotId}</code> via {hotWallet.name}
+          </dd>
+        </div>
+        <div>
+          <dt>Cold</dt>
+          <dd>
+            <code>{coldId}</code>
+          </dd>
+        </div>
+      </dl>
 
       <div className="row">
         <button
