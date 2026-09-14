@@ -42,7 +42,13 @@ export function HotWalletPicker({ hotWallet, disabled, onConnected, onError }: P
   }
 
   if (wallets.length === 0) {
-    return <p>No CIP-30 wallet extension was detected. Install Lace, Eternl, Vespr, or similar.</p>
+    return (
+      <p>
+        No CIP-30 wallet extension was detected. On desktop, install Lace, Eternl, Vespr, or
+        similar. On a phone, open this site inside your wallet&apos;s in-app browser (Lace, Eternl,
+        or Vespr).
+      </p>
+    )
   }
 
   return (

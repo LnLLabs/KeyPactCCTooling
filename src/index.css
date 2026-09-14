@@ -38,6 +38,7 @@
   text-align: left;
   border-inline: 1px solid var(--border);
   min-height: 100svh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -47,6 +48,12 @@
 body {
   margin: 0;
   background: #0a0c10;
+}
+
+@media (max-width: 640px) {
+  #root {
+    border-inline: none;
+  }
 }
 
 h1,

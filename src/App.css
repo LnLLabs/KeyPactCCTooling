@@ -54,6 +54,7 @@
 
 nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -67,6 +68,10 @@ nav a {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 600;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
 }
 
 nav a.active {
@@ -150,6 +155,8 @@ button {
   border-radius: 8px;
   padding: 8px 14px;
   cursor: pointer;
+  min-height: 44px;
+  box-sizing: border-box;
 }
 
 button:disabled {
@@ -281,6 +288,7 @@ textarea {
   color: var(--text-h);
   padding: 4px 10px;
   font-size: 13px;
+  min-height: 36px;
 }
 
 .ghost-btn:hover:not(:disabled) {
@@ -290,6 +298,7 @@ textarea {
 
 .library-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 8px 0 20px;
 }
@@ -298,6 +307,7 @@ textarea {
 .reader-tabs button {
   background: transparent;
   border-color: var(--border);
+  min-height: 44px;
 }
 
 .library-tabs button.active,
@@ -343,6 +353,7 @@ textarea {
   background: var(--code-bg);
   color: var(--text-h);
   font: inherit;
+  min-height: 44px;
 }
 
 .library-source {
@@ -624,6 +635,8 @@ a {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
+  min-height: 44px;
+  box-sizing: border-box;
 }
 
 .settings-check {
@@ -639,5 +652,156 @@ a {
   align-items: center;
   text-decoration: none;
   color: var(--text-h);
+  box-sizing: border-box;
 }
+
+@media (max-width: 640px) {
+  .app {
+    padding: max(16px, env(safe-area-inset-top, 0px))
+      max(16px, env(safe-area-inset-right, 0px))
+      max(32px, env(safe-area-inset-bottom, 0px))
+      max(16px, env(safe-area-inset-left, 0px));
+  }
+
+  .top {
+    gap: 12px;
+    padding: 4px 0 16px;
+    margin-bottom: 20px;
+  }
+
+  .brand-logo {
+    width: min(180px, 65vw);
+  }
+
+  .brand-copy h1,
+  .top h1 {
+    font-size: 22px;
+  }
+
+  .panel h1 {
+    font-size: 28px;
+  }
+
+  nav {
+    gap: 8px;
+  }
+
+  nav a {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .session {
+    font-size: 12px;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .row > button,
+  .row > .link-btn {
+    width: 100%;
+    justify-content: center;
+    min-width: 0;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .row > button:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .proposal-list li {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding-right: 0;
+  }
+
+  .proposal-list label {
+    padding: 12px 14px 8px;
+  }
+
+  .proposal-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    margin: 0;
+    padding: 0 14px 12px;
+    gap: 10px;
+  }
+
+  .constitution-badge,
+  .constitution-flag {
+    margin-top: 0;
+    max-width: 100%;
+  }
+
+  .constitution-badge.error {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .library-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .library-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .library-toolbar .row {
+    width: 100%;
+  }
+
+  .reader-overlay {
+    padding: 0;
+    place-items: stretch;
+  }
+
+  .reader-sheet {
+    width: 100%;
+    max-height: none;
+    height: 100svh;
+    height: 100dvh;
+    border-radius: 0;
+    border: none;
+  }
+
+  .reader-header {
+    gap: 12px;
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px 12px;
+  }
+
+  .reader-header h2 {
+    font-size: 18px;
+  }
+
+  .reader-body {
+    padding: 8px 16px 24px;
+  }
+
+  .reader-footer {
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .reader-prose {
+    font-size: 15px;
+  }
+
+  .settings-form {
+    max-width: none;
+  }
+}
+
 
