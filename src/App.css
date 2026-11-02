@@ -294,6 +294,48 @@ textarea {
   white-space: pre-wrap;
 }
 
+.immutability-flag {
+  flex-shrink: 0;
+  max-width: 320px;
+  font-size: 13px;
+  color: #f87171;
+}
+
+.immutability-flag summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.immutability-flag p,
+.immutability-flag li {
+  color: var(--text);
+  word-break: break-all;
+}
+
+.immutability-flag ul {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.immutability-flag code {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.immutability-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted, #9ca3af);
+  font-size: 13px;
+  max-width: 220px;
+}
+
+.reader-immutability {
+  max-width: none;
+  margin-bottom: 16px;
+}
+
 .proposal-actions {
   display: flex;
   flex-direction: column;
@@ -761,7 +803,9 @@ a {
   }
 
   .constitution-badge,
-  .constitution-flag {
+  .constitution-flag,
+  .immutability-flag,
+  .immutability-note {
     margin-top: 0;
     max-width: 100%;
   }

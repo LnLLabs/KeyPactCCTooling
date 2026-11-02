@@ -5,6 +5,7 @@ import {
   proposalPayload,
 } from '../cardano/constitutionality'
 import type { Proposal } from '../cardano/governance'
+import { findMutabilityViolations } from '../cardano/immutability'
 import { ensureProposalMetadata, explorerTxUrl } from '../cardano/governance'
 import { proposalSections, renderMarkdownLite } from '../lib/readableText'
 
@@ -107,6 +108,7 @@ function ProposalBody({
   const [tab, setTab] = useState<ProposalTab>('metadata')
   const metaSections = proposalSections(proposal.metadata?.json)
   const onchainSections = proposalSections(proposal.description)
+  const immutability = findMutabilityViolations(proposal)
 
   useEffect(() => {
     setProposal(initial)
@@ -208,6 +210,25 @@ function ProposalBody({
           {loadingMeta && <p className="reader-empty">Loading off-chain metadata…</p>}
           {proposal.metadata?.error && (
             <p className="error">Metadata fetch note: {proposal.metadata.error}</p>
+          )}
+          {!loadingMeta && immutability.status === 'violation' && (
+            <div className="immutability-flag reader-immutability">
+              <p>
+                Proposal content is not immutable. Citations listed under references may use
+                ordinary websites. These URLs are part of the proposal:
+              </p>
+              <ul>
+                {immutability.violations.map((violation) => (
+                  <li key={`${violation.path}\0${violation.url}`}>
+                    <code>{violation.path}</code>
+                    <span>{violation.url}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!loadingMeta && immutability.status === 'unverified' && (
+            <p className="immutability-note">{immutability.note}</p>
           )}
           {!loadingMeta && metaSections.length === 0 ? (
             <p className="reader-empty">

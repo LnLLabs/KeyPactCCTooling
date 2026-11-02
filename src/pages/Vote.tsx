@@ -6,6 +6,7 @@ import {
   type ConstitutionalityResult,
 } from '../cardano/constitutionality'
 import {
+  castNoVotes,
   castYesVotes,
   explorerTxUrl,
   fetchCommitteeVotes,
@@ -14,6 +15,9 @@ import {
   type Proposal,
   type VotedProposal,
 } from '../cardano/governance'
+import { findMutabilityViolations, encodeNoRationale } from '../cardano/immutability'
+import { publishNoRationale } from '../cardano/pinata'
+import { getPinataJwt } from '../cardano/settings'
 import type { HotWallet } from '../cardano/hotWallet'
 import { fetchCommitteeMembers, checkHotAuthorization } from '../cardano/register'
 import { DocumentReader, type ReaderTarget } from '../components/DocumentReader'
@@ -43,7 +47,9 @@ export function VotePage() {
   const [switching, setSwitching] = useState(false)
   const [inspecting, setInspecting] = useState(false)
   const [inspection, setInspection] = useState<Record<string, ConstitutionalityResult>>({})
+  const [yesAnyway, setYesAnyway] = useState<Set<string>>(new Set())
   const [reader, setReader] = useState<ReaderTarget | null>(null)
+  const pinataReady = getPinataJwt().length > 0
 
   const canCast = TEMP_ALLOW_CAST_WITHOUT_AUTH || authorized === true
 
@@ -55,6 +61,16 @@ export function VotePage() {
   const selectedList = useMemo(
     () => allProposals.filter((proposal) => selected.has(proposal.proposalId)),
     [allProposals, selected],
+  )
+
+  const yesTargets = useMemo(
+    () => selectedList.filter((proposal) => !countsAsViolation(proposal, yesAnyway)),
+    [selectedList, yesAnyway],
+  )
+
+  const noTargets = useMemo(
+    () => selectedList.filter((proposal) => countsAsViolation(proposal, yesAnyway)),
+    [selectedList, yesAnyway],
   )
 
   const refresh = useCallback(async () => {
@@ -87,7 +103,14 @@ export function VotePage() {
       const partitioned = partitionProposalsByVote(open, votes)
       setPending(partitioned.pending)
       setVoted(partitioned.voted)
-      setSelected(new Set(partitioned.pending.map((proposal) => proposal.proposalId)))
+      setYesAnyway(new Set())
+      setSelected(
+        new Set(
+          partitioned.pending
+            .filter((proposal) => findMutabilityViolations(proposal).status !== 'violation')
+            .map((proposal) => proposal.proposalId),
+        ),
+      )
       setInspection({})
       setStatus(
         `${partitioned.pending.length} pending · ${partitioned.voted.length} already voted · ` +
@@ -123,6 +146,7 @@ export function VotePage() {
     setAuthorized(null)
     setTxHashes([])
     setInspection({})
+    setYesAnyway(new Set())
     setStatus(null)
     setError(null)
     setWarning(null)
@@ -156,23 +180,96 @@ export function VotePage() {
     )
   }
 
-  async function onVote() {
+  function allowYesAnyway(proposalId: string) {
+    setYesAnyway((current) => {
+      const next = new Set(current)
+      next.add(proposalId)
+      return next
+    })
+    setSelected((current) => {
+      const next = new Set(current)
+      next.add(proposalId)
+      return next
+    })
+  }
+
+  function undoYesAnyway(proposalId: string) {
+    setYesAnyway((current) => {
+      const next = new Set(current)
+      next.delete(proposalId)
+      return next
+    })
+  }
+
+  async function onVoteYes() {
     if (!hotWallet) return
     if (!canCast) {
-      setError(
-        'Cannot cast committee votes: this hot key is not the active authorized hot for a current committee cold. ' +
-          (warning ?? ''),
+      setError(unauthorizedMessage(warning))
+      return
+    }
+    if (yesTargets.length === 0) {
+      setError('Nothing to vote Yes. Uncheck immutability violations, or choose Yes anyway.')
+      return
+    }
+    const skipped = noTargets.length
+    setBusy(true)
+    setError(null)
+    setTxHashes([])
+    setStatus(
+      skipped > 0
+        ? `Building a Yes / lgtm batch for ${yesTargets.length} action(s), leaving ${skipped} immutability violation(s) for No…`
+        : `Building a Yes / lgtm batch for ${yesTargets.length} action(s)…`,
+    )
+    try {
+      const hashes = await castYesVotes(hotWallet, yesTargets)
+      setTxHashes(hashes)
+      setStatus(
+        skipped > 0
+          ? `Submitted ${hashes.length} Yes transaction(s). ${skipped} immutability violation(s) were left out.`
+          : `Submitted ${hashes.length} transaction(s). Approve each CIP-30 prompt, then refreshing…`,
       )
+      await refresh()
+    } catch (err) {
+      setError(formatError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onVoteNo() {
+    if (!hotWallet) return
+    if (!canCast) {
+      setError(unauthorizedMessage(warning))
+      return
+    }
+    if (!pinataReady) {
+      setError('Save a Pinata JWT in Settings before casting No votes.')
+      return
+    }
+    if (noTargets.length === 0) {
+      setError('Select a proposal that fails the immutability check.')
       return
     }
     setBusy(true)
     setError(null)
     setTxHashes([])
-    setStatus(`Building a Yes / lgtm batch for ${selectedList.length} action(s)…`)
     try {
-      const hashes = await castYesVotes(hotWallet, selectedList)
+      const anchored: Parameters<typeof castNoVotes>[1] = []
+      for (let index = 0; index < noTargets.length; index++) {
+        const proposal = noTargets[index]!
+        const report = findMutabilityViolations(proposal)
+        if (report.violations.length === 0) {
+          throw new Error(`${proposal.proposalId} has no immutability violation to cite.`)
+        }
+        setStatus(`Pinning No rationale ${index + 1} of ${noTargets.length}: ${proposal.title}`)
+        const bytes = encodeNoRationale(proposal, report.violations)
+        const anchor = await publishNoRationale(bytes, `cc-no-${proposal.txHash}-${proposal.index}`)
+        anchored.push({ proposal, anchor })
+      }
+      setStatus(`Building a No batch for ${anchored.length} action(s)…`)
+      const hashes = await castNoVotes(hotWallet, anchored)
       setTxHashes(hashes)
-      setStatus(`Submitted ${hashes.length} transaction(s). Approve each CIP-30 prompt, then refreshing…`)
+      setStatus(`Submitted ${hashes.length} No transaction(s). Approve each CIP-30 prompt, then refreshing…`)
       await refresh()
     } catch (err) {
       setError(formatError(err))
@@ -256,8 +353,9 @@ export function VotePage() {
       <h1>Vote</h1>
       {!settingsReady && <MissingSettingsBanner />}
       <p className="lead">
-        Pending actions are selected by default. Already-voted actions stay listed so you can
-        re-cast Yes with rationale <code>lgtm</code> if you need to change them.
+        Pending actions are selected by default, except proposals whose off-chain metadata links
+        to ordinary HTTP content without a hash. Those stay unchecked so you can cast No with a
+        rationale pinned to IPFS. Already-voted actions stay listed so you can re-cast.
       </p>
       <dl className="meta vote-identity">
         <div>
@@ -310,12 +408,23 @@ export function VotePage() {
         </button>
         <button
           type="button"
-          onClick={() => void onVote()}
-          disabled={!settingsReady || busy || selectedList.length === 0 || !canCast}
+          onClick={() => void onVoteYes()}
+          disabled={!settingsReady || busy || yesTargets.length === 0 || !canCast}
         >
-          {busy ? 'Submitting…' : `Cast ${selectedList.length} Yes vote(s)`}
+          {busy ? 'Submitting…' : `Cast ${yesTargets.length} Yes vote(s)`}
+        </button>
+        <button
+          type="button"
+          onClick={() => void onVoteNo()}
+          disabled={!settingsReady || busy || noTargets.length === 0 || !canCast || !pinataReady}
+          title={pinataReady ? undefined : 'Save a Pinata JWT in Settings to cast No votes'}
+        >
+          {busy ? 'Submitting…' : `Cast ${noTargets.length} No vote(s)`}
         </button>
       </div>
+      {noTargets.length > 0 && !pinataReady && (
+        <p className="error">Save a Pinata JWT in Settings before casting No votes.</p>
+      )}
 
       {authorized === true && (
         <p className="status">Hot credential is authorized on the committee.</p>
@@ -335,7 +444,10 @@ export function VotePage() {
             selected={selected}
             canCast={canCast}
             inspection={inspection}
+            yesAnyway={yesAnyway}
             onToggle={toggle}
+            onYesAnyway={allowYesAnyway}
+            onUndoYesAnyway={undoYesAnyway}
             onRead={(proposal) => setReader({ kind: 'proposal', proposal })}
           />
         </section>
@@ -345,17 +457,21 @@ export function VotePage() {
         <section className="vote-section">
           <h2>Already voted ({voted.length})</h2>
           <p className="section-lead">
-            Prior votes from this hot. Select any to re-submit Yes / lgtm and overwrite on-chain.
+            Prior votes from this hot. Select any to re-submit Yes / lgtm, or No when the
+            metadata is not immutable.
           </p>
           <ProposalList
             proposals={voted.map((row) => row.proposal)}
             selected={selected}
             canCast={canCast}
             inspection={inspection}
+            yesAnyway={yesAnyway}
             priorVotes={Object.fromEntries(
               voted.map((row) => [row.proposal.proposalId, row.vote]),
             )}
             onToggle={toggle}
+            onYesAnyway={allowYesAnyway}
+            onUndoYesAnyway={undoYesAnyway}
             onRead={(proposal) => setReader({ kind: 'proposal', proposal })}
           />
         </section>
@@ -387,21 +503,38 @@ export function VotePage() {
   )
 }
 
+function countsAsViolation(proposal: Proposal, overrides: Set<string>): boolean {
+  return !overrides.has(proposal.proposalId) && findMutabilityViolations(proposal).status === 'violation'
+}
+
+function unauthorizedMessage(warning: string | null): string {
+  return (
+    'Cannot cast committee votes: this hot key is not the active authorized hot for a current committee cold. ' +
+    (warning ?? '')
+  )
+}
+
 function ProposalList({
   proposals,
   selected,
   canCast,
   inspection,
+  yesAnyway,
   priorVotes,
   onToggle,
+  onYesAnyway,
+  onUndoYesAnyway,
   onRead,
 }: {
   proposals: Proposal[]
   selected: Set<string>
   canCast: boolean
   inspection: Record<string, ConstitutionalityResult>
+  yesAnyway: Set<string>
   priorVotes?: Record<string, string | null>
   onToggle: (id: string) => void
+  onYesAnyway: (id: string) => void
+  onUndoYesAnyway: (id: string) => void
   onRead: (proposal: Proposal) => void
 }) {
   return (
@@ -431,12 +564,71 @@ function ProposalList({
               <button type="button" className="ghost-btn" onClick={() => onRead(proposal)}>
                 Read
               </button>
+              <ImmutabilityBadge
+                proposal={proposal}
+                overridden={yesAnyway.has(proposal.proposalId)}
+                canCast={canCast}
+                onYesAnyway={() => onYesAnyway(proposal.proposalId)}
+                onUndo={() => onUndoYesAnyway(proposal.proposalId)}
+              />
               <ConstitutionalityBadge result={result} />
             </div>
           </li>
         )
       })}
     </ul>
+  )
+}
+
+function ImmutabilityBadge({
+  proposal,
+  overridden,
+  canCast,
+  onYesAnyway,
+  onUndo,
+}: {
+  proposal: Proposal
+  overridden: boolean
+  canCast: boolean
+  onYesAnyway: () => void
+  onUndo: () => void
+}) {
+  if (overridden) {
+    return (
+      <div className="immutability-note">
+        <span>Included in Yes</span>
+        <button type="button" className="ghost-btn" onClick={onUndo}>
+          Undo
+        </button>
+      </div>
+    )
+  }
+  const report = findMutabilityViolations(proposal)
+  if (report.status === 'unverified') {
+    return (
+      <span className="immutability-note" title={report.note}>
+        Metadata unverified
+      </span>
+    )
+  }
+  if (report.status !== 'violation') return null
+  return (
+    <details className="immutability-flag">
+      <summary>Not immutable ({report.violations.length})</summary>
+      <ul>
+        {report.violations.map((violation) => (
+          <li key={`${violation.path}\0${violation.url}`}>
+            <code>{violation.path}</code>
+            <span>{violation.url}</span>
+          </li>
+        ))}
+      </ul>
+      {canCast && (
+        <button type="button" className="ghost-btn" onClick={onYesAnyway}>
+          Yes anyway
+        </button>
+      )}
+    </details>
   )
 }
 

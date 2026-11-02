@@ -359,28 +359,33 @@ function toGovActionId(proposal: Proposal): GovernanceAction.GovActionId {
   })
 }
 
-function buildVotingProcedures(wallet: HotWallet, proposals: Proposal[], anchor: Anchor.Anchor) {
+export type CastVote = {
+  proposal: Proposal
+  vote: 'yes' | 'no'
+  anchor: Anchor.Anchor
+}
+
+function buildVotingProcedures(wallet: HotWallet, votes: CastVote[]) {
   const voter = new VotingProcedures.ConstitutionalCommitteeVoter({
     credential: wallet.keyHash,
   })
-  const procedure = new VotingProcedures.VotingProcedure({
-    vote: VotingProcedures.yes(),
-    anchor,
-  })
   return VotingProcedures.multiVote(
     voter,
-    proposals.map((proposal) => [toGovActionId(proposal), procedure] as const),
+    votes.map((item) => {
+      const procedure = new VotingProcedures.VotingProcedure({
+        vote: item.vote === 'yes' ? VotingProcedures.yes() : VotingProcedures.no(),
+        anchor: item.anchor,
+      })
+      return [toGovActionId(item.proposal), procedure] as const
+    }),
   )
 }
 
-async function submitBatch(
-  wallet: HotWallet,
-  proposals: Proposal[],
-  anchor: Anchor.Anchor,
-): Promise<string> {
+async function submitBatch(wallet: HotWallet, votes: CastVote[]): Promise<string> {
+  if (votes.length === 0) throw new Error('Empty vote batch')
   const client = createSigningClient(wallet)
   const built = await client.newTx().vote({
-    votingProcedures: buildVotingProcedures(wallet, proposals, anchor),
+    votingProcedures: buildVotingProcedures(wallet, votes),
   }).build()
   const sized = await built.toTransactionWithFakeWitnesses()
   const size = Transaction.toCBORBytes(sized).length
@@ -391,20 +396,15 @@ async function submitBatch(
   return TransactionHash.toHex(submitted)
 }
 
-export async function castYesVotes(
-  wallet: HotWallet,
-  proposals: Proposal[],
-): Promise<string[]> {
-  if (proposals.length === 0) throw new Error('Select at least one proposal')
-  const anchor = await loadLgtmAnchor()
+async function submitInBatches(wallet: HotWallet, votes: CastVote[]): Promise<string[]> {
   const hashes: string[] = []
-  let batchSize = Math.min(INITIAL_BATCH, proposals.length)
-  let remaining = [...proposals]
+  let batchSize = Math.min(INITIAL_BATCH, votes.length)
+  let remaining = [...votes]
 
   while (remaining.length > 0) {
     const batch = remaining.slice(0, batchSize)
     try {
-      hashes.push(await submitBatch(wallet, batch, anchor))
+      hashes.push(await submitBatch(wallet, batch))
       remaining = remaining.slice(batch.length)
       batchSize = Math.min(INITIAL_BATCH, remaining.length || 1)
     } catch (error) {
@@ -417,6 +417,29 @@ export async function castYesVotes(
   }
 
   return hashes
+}
+
+export async function castYesVotes(
+  wallet: HotWallet,
+  proposals: Proposal[],
+): Promise<string[]> {
+  if (proposals.length === 0) throw new Error('Select at least one proposal')
+  const anchor = await loadLgtmAnchor()
+  return submitInBatches(
+    wallet,
+    proposals.map((proposal) => ({ proposal, vote: 'yes' as const, anchor })),
+  )
+}
+
+export async function castNoVotes(
+  wallet: HotWallet,
+  votes: Array<{ proposal: Proposal; anchor: Anchor.Anchor }>,
+): Promise<string[]> {
+  if (votes.length === 0) throw new Error('Select at least one proposal')
+  return submitInBatches(
+    wallet,
+    votes.map((item) => ({ proposal: item.proposal, vote: 'no' as const, anchor: item.anchor })),
+  )
 }
 
 export function explorerTxUrl(txHash: string): string {

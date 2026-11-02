@@ -12,6 +12,7 @@ export type AppSettings = {
   blockfrostProjectId: string
   blockfrostUrl: string
   deepseekApiKey: string
+  pinataJwt: string
   rationaleUrl: string
   constitutionUrl: string
 }
@@ -20,6 +21,7 @@ const KEYS = {
   blockfrostProjectId: `${STORAGE_PREFIX}blockfrostProjectId`,
   blockfrostUrl: `${STORAGE_PREFIX}blockfrostUrl`,
   deepseekApiKey: `${STORAGE_PREFIX}deepseekApiKey`,
+  pinataJwt: `${STORAGE_PREFIX}pinataJwt`,
   rationaleUrl: `${STORAGE_PREFIX}rationaleUrl`,
   constitutionUrl: `${STORAGE_PREFIX}constitutionUrl`,
   seeded: `${STORAGE_PREFIX}seeded`,
@@ -52,7 +54,7 @@ export function seedSettingsFromEnvOnce() {
     return
   }
 
-  // Do not seed blockfrostProjectId or deepseekApiKey — those must be pasted in Settings.
+  // Do not seed blockfrostProjectId, deepseekApiKey, or pinataJwt — those must be pasted in Settings.
   const envRationale = import.meta.env.VITE_RATIONALE_URL?.trim()
   const envConstitution = import.meta.env.VITE_CONSTITUTION_URL?.trim()
   const envBfUrl = import.meta.env.VITE_BLOCKFROST_URL?.trim()
@@ -67,6 +69,7 @@ export function loadSettings(): AppSettings {
     blockfrostProjectId: read(KEYS.blockfrostProjectId),
     blockfrostUrl: read(KEYS.blockfrostUrl),
     deepseekApiKey: read(KEYS.deepseekApiKey),
+    pinataJwt: read(KEYS.pinataJwt),
     rationaleUrl: read(KEYS.rationaleUrl),
     constitutionUrl: read(KEYS.constitutionUrl),
   }
@@ -76,6 +79,7 @@ export function saveSettings(settings: AppSettings) {
   write(KEYS.blockfrostProjectId, settings.blockfrostProjectId)
   write(KEYS.blockfrostUrl, settings.blockfrostUrl)
   write(KEYS.deepseekApiKey, settings.deepseekApiKey)
+  write(KEYS.pinataJwt, settings.pinataJwt)
   write(KEYS.rationaleUrl, settings.rationaleUrl)
   write(KEYS.constitutionUrl, settings.constitutionUrl)
 }
@@ -110,6 +114,10 @@ export function getDeepseekApiKey(): string {
   return loadSettings().deepseekApiKey
 }
 
+export function getPinataJwt(): string {
+  return loadSettings().pinataJwt
+}
+
 export function getRationaleUrl(): string {
   return loadSettings().rationaleUrl || DEFAULT_RATIONALE_URL
 }
@@ -124,6 +132,7 @@ export function settingsDefaultsForForm(): AppSettings {
     blockfrostProjectId: current.blockfrostProjectId,
     blockfrostUrl: current.blockfrostUrl || (import.meta.env.DEV ? '' : DEFAULT_BLOCKFROST_API_URL),
     deepseekApiKey: current.deepseekApiKey,
+    pinataJwt: current.pinataJwt,
     rationaleUrl: current.rationaleUrl || DEFAULT_RATIONALE_URL,
     constitutionUrl: current.constitutionUrl || DEFAULT_CONSTITUTION_URL,
   }

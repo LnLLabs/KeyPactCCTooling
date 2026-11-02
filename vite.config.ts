@@ -16,6 +16,20 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/deepseek/, ''),
       },
+      // Same-origin in dev so a Pinata 401 is readable. That error response has no CORS header.
+      '/pinata-upload': {
+        target: 'https://uploads.pinata.cloud',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/pinata-upload/, ''),
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            const authorization = req.headers.authorization
+            if (typeof authorization === 'string' && authorization.length > 0) {
+              proxyReq.setHeader('Authorization', authorization)
+            }
+          })
+        },
+      },
     },
   },
   optimizeDeps: {

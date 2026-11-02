@@ -57,7 +57,8 @@ export function SettingsPage() {
         API keys and URLs are stored only in this browser&apos;s local storage so the public
         <code> cc.brothershipool.org </code>
         build contains no secrets. Paste Blockfrost and DeepSeek keys here yourself — they are not
-        taken from the server. Anyone who can use this device profile can still read them.
+        taken from the server. The Pinata JWT is used only to publish No-vote rationales.
+        Anyone who can use this device profile can still read them.
       </p>
 
       {!configured && (
@@ -101,6 +102,17 @@ export function SettingsPage() {
             value={form.deepseekApiKey}
             onChange={(event) => update('deepseekApiKey', event.target.value)}
             placeholder="sk-…"
+          />
+        </label>
+
+        <label>
+          <span>Pinata JWT (publishes No-vote rationales)</span>
+          <input
+            type={showKeys ? 'text' : 'password'}
+            autoComplete="off"
+            value={form.pinataJwt}
+            onChange={(event) => update('pinataJwt', event.target.value)}
+            placeholder="eyJ…"
           />
         </label>
 
